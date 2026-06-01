@@ -1,0 +1,127 @@
+syntax = "proto3";
+
+package sp.narrative;
+
+// ═══════════════════════════════════════════════════
+//  叙事引擎 gRPC 协议定义
+//  Narrative Engine gRPC Protocol
+// ═══════════════════════════════════════════════════
+
+// ── 叙事生成服务 ──────────────────────────────────
+service NarrativeService {
+  /// 多模型并行流式生成 (灵犀矩阵核心)
+  rpc GenerateStream(GenerateRequest) returns (stream GenerateChunk);
+  
+  /// 观察者坍缩 (注入情感权重，重塑概率分布)
+  rpc Collapse(CollapseRequest) returns (CollapseResponse);
+  
+  /// 获取 MDP 转移矩阵当前状态
+  rpc GetTransitionMatrix(MatrixRequest) returns (MatrixResponse);
+}
+
+// ── 生成请求 ──
+message GenerateRequest {
+  string story_id = 1;
+  string node_id = 2;                      // 当前叙事节点 ID
+  string prompt = 3;                       // 作者输入的 Prompt
+  repeated string target_providers = 4;    // 目标 LLM 提供商 ["openai", "anthropic", "local"]
+  
+  // 世界上下文注入
+  string world_context = 5;               // 当前世界状态摘要
+  repeated string active_npc_ids = 6;     // 当前场景中的活跃 NPC ID
+  string reader_profile = 7;              // 读者画像 JSON (用于个性化生成)
+  
+  // 生成参数
+  float temperature = 8;                  // 采样温度
+  int32 max_tokens = 9;                   // 最大生成 Token 数
+  float top_p = 10;                       // Nucleus Sampling
+}
+
+// ── 流式生成块 ──
+message GenerateChunk {
+  string provider = 1;                    // LLM 提供商标识
+  string text = 2;                        // 文本片段
+  bool is_final = 3;                      // 是否为最后一个块
+  
+  // 元数据 (仅在 final chunk 中填充)
+  int32 total_tokens = 4;
+  string finish_reason = 5;              // "stop" / "length" / "error"
+  
+  // 叙事分析 (由引擎在流式过程中实时计算)
+  NarrativeAnalysis analysis = 6;
+}
+
+// ── 叙事分析结果 ──
+message NarrativeAnalysis {
+  float coherence_score = 1;             // 与现有剧情的连贯性评分 [0, 1]
+  float tension_delta = 2;              // 紧张度变化 Δ
+  repeated string detected_entities = 3; // 检测到的新实体 (NPC/地点/道具)
+  repeated string plot_hooks = 4;       // 自动生成的剧情钩子
+}
+
+// ── 观察者坍缩请求 ──
+message CollapseRequest {
+  string story_id = 1;
+  string reader_id = 2;
+  
+  // 观察者信号 (来自前端情感计算)
+  ObserverSignal signal = 3;
+}
+
+// ── 观察者信号 ──
+message ObserverSignal {
+  // 情感维度 (来自 MediaPipe / WebNN)
+  float valence = 1;                     // [-1, 1] 负面↔正面
+  float arousal = 2;                     // [0, 1] 低唤醒↔高唤醒
+  float dominance = 3;                   // [0, 1] 低支配↔高支配
+  
+  // 注意力焦点
+  float gaze_duration_ms = 4;           // 视线停留时长 (毫秒)
+  float pupil_dilation = 5;             // 瞳孔放大系数
+  string focused_entity_id = 6;         // 视线聚焦的实体 ID
+  
+  // 微表情特征向量 (MediaPipe 478 点降维后)
+  repeated float facial_embedding = 7;
+}
+
+// ── 坍缩响应 ──
+message CollapseResponse {
+  bool success = 1;
+  string collapsed_path_id = 2;          // 坍缩后的路径 ID
+  
+  // 波函数坍缩前后的概率分布变化
+  repeated ProbabilityShift shifts = 3;
+  
+  string generated_content = 4;          // 坍缩触发的新生成内容
+}
+
+// ── 概率偏移 ──
+message ProbabilityShift {
+  string edge_id = 1;                    // 叙事边 ID
+  float probability_before = 2;          // 坍缩前概率
+  float probability_after = 3;           // 坍缩后概率
+  string reason = 4;                     // 偏移原因描述
+}
+
+// ── 矩阵请求/响应 ──
+message MatrixRequest {
+  string story_id = 1;
+}
+
+message MatrixResponse {
+  string story_id = 1;
+  repeated TransitionRow rows = 2;
+}
+
+message TransitionRow {
+  string source_node_id = 1;
+  repeated TransitionCell cells = 2;
+}
+
+message TransitionCell {
+  string target_node_id = 1;
+  string edge_id = 2;
+  float probability = 3;
+  float reward = 4;
+  float observer_weight = 5;
+}

@@ -1,0 +1,49 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --spark-primary: #4c6ef5;
+  --spark-glow: #00f5ff;
+  --spark-dark: #0a0e1a;
+  --spark-surface: #111827;
+  --spark-border: #1e293b;
+}
+
+body {
+  background-color: var(--spark-dark);
+  color: #e2e8f0;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+}
+
+/* 星轨编织器画布 */
+.starloom-canvas {
+  background-image:
+    radial-gradient(circle at 1px 1px, rgba(76, 110, 245, 0.15) 1px, transparent 0);
+  background-size: 40px 40px;
+}
+
+/* 灵犀矩阵发光效果 */
+.neon-glow {
+  text-shadow: 0 0 10px var(--spark-glow), 0 0 20px var(--spark-glow);
+}
+
+/* 脉冲动画 */
+@keyframes pulse-glow {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 1; }
+}
+
+.animate-pulse-glow {
+  animation: pulse-glow 2s ease-in-out infinite;
+}
+
+/* 流式文本渐入 */
+@keyframes fade-in-up {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.animate-fade-in {
+  animation: fade-in-up 0.3s ease-out;
+}

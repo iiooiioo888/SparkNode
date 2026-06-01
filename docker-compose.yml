@@ -1,0 +1,123 @@
+# ═══════════════════════════════════════════════════
+#  灵犀节点 (SparkNode) 基础设施编排
+#  docker compose up -d
+# ═══════════════════════════════════════════════════
+
+version: "3.9"
+
+services:
+  # ── PostgreSQL (关系型数据 + pgvector) ───────────
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: sp-postgres
+    environment:
+      POSTGRES_DB: sparknode
+      POSTGRES_USER: spark
+      POSTGRES_PASSWORD: spark_dev_password
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./migrations:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U spark -d sparknode"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # ── Qdrant (向量数据库 - NPC 海马体记忆) ──────────
+  qdrant:
+    image: qdrant/qdrant:v1.12.1
+    container_name: sp-qdrant
+    ports:
+      - "6333:6333"   # REST API
+      - "6334:6334"   # gRPC
+    volumes:
+      - qdrant_data:/qdrant/storage
+    environment:
+      QDRANT__SERVICE__GRPC_PORT: 6334
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:6333/healthz || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # ── Memgraph (内存级图数据库 - 叙事 DAG + 社会关系) ──
+  memgraph:
+    image: memgraph/memgraph-platform:2.19.0
+    container_name: sp-memgraph
+    ports:
+      - "7687:7687"   # Bolt 协议
+      - "7444:7444"   # Memgraph Lab (Web UI)
+    volumes:
+      - memgraph_data:/var/lib/memgraph
+    environment:
+      --log-level: WARNING
+    healthcheck:
+      test: ["CMD-SHELL", "echo 'RETURN 1;' | mgconsole || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # ── Redis (缓存 + 事件总线 + 会话存储) ───────────
+  redis:
+    image: redis:7-alpine
+    container_name: sp-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+
+  # ── Rust 网关服务 (可选: 容器化部署) ─────────────
+  # sp-gateway:
+  #   build:
+  #     context: .
+  #     dockerfile: crates/sp-gateway/Dockerfile
+  #   container_name: sp-gateway
+  #   ports:
+  #     - "3001:3001"
+  #     - "3002:3002"
+  #     - "3003:3003"
+  #   depends_on:
+  #     postgres:
+  #       condition: service_healthy
+  #     qdrant:
+  #       condition: service_healthy
+  #     memgraph:
+  #       condition: service_healthy
+  #     redis:
+  #       condition: service_healthy
+  #   env_file:
+  #     - .env
+  #   restart: unless-stopped
+
+  # ── Python LLM 路由服务 (可选: 容器化部署) ────────
+  # sp-llm-router:
+  #   build:
+  #     context: ./services/sp-llm-router
+  #     dockerfile: Dockerfile
+  #   container_name: sp-llm-router
+  #   ports:
+  #     - "8001:8001"
+  #   depends_on:
+  #     redis:
+  #       condition: service_healthy
+  #   env_file:
+  #     - .env
+  #   restart: unless-stopped
+
+volumes:
+  postgres_data:
+  qdrant_data:
+  memgraph_data:
+  redis_data:

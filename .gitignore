@@ -1,0 +1,51 @@
+# ═══════════════════════════════════════════════════
+#  灵犀节点 (SparkNode) .gitignore
+# ═══════════════════════════════════════════════════
+
+# ── Rust ──
+/target/
+**/*.rs.bk
+Cargo.lock
+
+# ── Node.js ──
+node_modules/
+.next/
+out/
+*.tsbuildinfo
+
+# ── Python ──
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+.venv/
+venv/
+
+# ── 环境配置 ──
+.env
+.env.local
+.env.*.local
+
+# ── IDE ──
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# ── 系统文件 ──
+.DS_Store
+Thumbs.db
+
+# ── Docker ──
+docker-compose.override.yml
+
+# ── 日志 ──
+*.log
+logs/
+
+# ── Babel 故事 Git 快照（與主專案分開版本管理）──
+f2c63a8d-c947-4b85-9565-a16952ac6a45/
+
+# ── 本機環境腳本（由 setup-env.ps1 產生）──
+scripts/sparknode.env.ps1

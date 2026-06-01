@@ -1,0 +1,23 @@
+[project]
+name = "sp-llm-router"
+version = "0.1.0"
+description = "SparkNode LLM 路由调度服务 (多模型并行 + gRPC)"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.32",
+    "grpcio>=1.68",
+    "grpcio-tools>=1.68",
+    "openai>=1.50",
+    "anthropic>=0.39",
+    "httpx>=0.28",
+    "pydantic>=2.10",
+    "redis>=5.2",
+    "python-dotenv>=1.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.24",
+]

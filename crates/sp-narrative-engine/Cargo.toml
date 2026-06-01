@@ -1,0 +1,18 @@
+[package]
+name = "sp-narrative-engine"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "SparkNode 叙事引擎 (DAG + MDP + Chronos 时间轴)"
+
+[dependencies]
+sp-common.workspace = true
+
+serde.workspace = true
+serde_json.workspace = true
+uuid.workspace = true
+chrono.workspace = true
+anyhow.workspace = true
+thiserror.workspace = true
+nalgebra.workspace = true
+tracing.workspace = true

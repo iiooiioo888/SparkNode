@@ -1,0 +1,141 @@
+syntax = "proto3";
+
+package sp.soul;
+
+// ═══════════════════════════════════════════════════
+//  灵魂引擎 gRPC 协议定义
+//  Soul Engine gRPC Protocol
+// ═══════════════════════════════════════════════════
+
+// ── NPC 智能体服务 ────────────────────────────────
+service SoulService {
+  /// NPC 行为模拟 (多轮推理)
+  rpc SimulateBehavior(SimulateRequest) returns (SimulateResponse);
+  
+  /// 记忆检索 (海马体语义召回)
+  rpc RecallMemories(RecallRequest) returns (RecallResponse);
+  
+  /// 记忆写入 (海马体编码)
+  rpc EncodeMemory(EncodeMemoryRequest) returns (EncodeMemoryResponse);
+  
+  /// 情感状态更新 (杏仁核)
+  rpc UpdateEmotion(EmotionUpdateRequest) returns (EmotionUpdateResponse);
+  
+  /// NPC 梦境生成 (Phase 3)
+  rpc DreamGenerate(DreamRequest) returns (DreamResponse);
+}
+
+// ── 行为模拟 ──
+message SimulateRequest {
+  string npc_id = 1;
+  string story_id = 2;
+  string current_situation = 3;            // 当前情境描述
+  
+  // 上下文注入
+  repeated string relevant_memory_ids = 4; // 已检索的相关记忆 ID
+  string world_state_json = 5;            // 世界状态 JSON
+  repeated string other_npc_ids = 6;      // 场景中的其他 NPC
+  
+  // 行为约束
+  float temperature = 7;                  // 逻辑约束温度 (梦境时调高)
+  int32 max_reasoning_steps = 8;          // 最大推理步数
+}
+
+message SimulateResponse {
+  string npc_id = 1;
+  string action = 2;                      // 决策行为
+  string dialogue = 3;                    // 生成的对话
+  string internal_monologue = 4;          // 内心独白 (读者不可见)
+  float confidence = 5;                   // 决策置信度
+  repeated string triggered_memories = 6; // 触发的记忆 ID
+  EmotionState new_emotion = 7;           // 行为后的情感状态
+}
+
+// ── 记忆检索 (海马体语义召回) ──
+message RecallRequest {
+  string npc_id = 1;
+  string query = 2;                       // 检索查询 (当前情境的自然语言描述)
+  int32 top_k = 3;                        // 返回 Top-K 条记忆
+  
+  // 遗忘曲线过滤
+  float min_strength = 4;                 // 最低记忆强度阈值 R(t)
+  
+  // 情感过滤
+  float emotion_filter_valence = 5;       // 按情感维度过滤 [-1, 1]
+  bool emotion_filter_enabled = 6;
+  
+  // 记忆类型过滤
+  repeated string memory_types = 7;       // ["episodic", "semantic", "procedural", "emotional"]
+}
+
+message RecallResponse {
+  string npc_id = 1;
+  repeated MemoryEntry memories = 2;
+}
+
+message MemoryEntry {
+  string id = 1;
+  string memory_type = 2;
+  string content = 3;                     // 记忆内容 (自然语言)
+  float strength = 4;                     // 当前记忆强度 R(t)
+  float emotional_valence = 5;
+  float emotional_arousal = 6;
+  string created_at = 7;
+  int32 rehearsal_count = 8;
+  float relevance_score = 9;             // 语义相关性评分
+}
+
+// ── 记忆编码 (海马体写入) ──
+message EncodeMemoryRequest {
+  string npc_id = 1;
+  string content = 2;                     // 记忆内容
+  string memory_type = 3;                 // "episodic" / "semantic" / "procedural" / "emotional"
+  float emotional_valence = 4;
+  float emotional_arousal = 5;
+  string source_node_id = 6;             // 来源叙事节点
+  repeated string involved_npc_ids = 7;  // 涉及的其他 NPC
+}
+
+message EncodeMemoryResponse {
+  string memory_id = 1;
+  string vector_id = 2;                  // Qdrant 中的向量 ID
+  bool success = 3;
+}
+
+// ── 情感状态更新 (杏仁核) ──
+message EmotionUpdateRequest {
+  string npc_id = 1;
+  string trigger_event = 2;              // 触发事件描述
+  float external_valence = 3;            // 外部情感刺激 [-1, 1]
+  float external_arousal = 4;            // 外部唤醒刺激 [0, 1]
+}
+
+message EmotionUpdateResponse {
+  string npc_id = 1;
+  EmotionState previous_emotion = 2;
+  EmotionState current_emotion = 3;
+  float mood_shift_magnitude = 4;       // 情绪偏移幅度
+}
+
+message EmotionState {
+  float valence = 1;                     // [-1, 1] 负面↔正面
+  float arousal = 2;                     // [0, 1] 低唤醒↔高唤醒
+  float dominance = 3;                   // [0, 1] 低支配↔高支配
+  string primary_emotion = 4;            // 主要情绪标签 ("joy", "anger", "fear", ...)
+  float intensity = 5;                   // 情绪强度 [0, 1]
+}
+
+// ── 梦境生成 (Phase 3) ──
+message DreamRequest {
+  string npc_id = 1;
+  repeated string recent_memory_ids = 2; // 近期记忆 ID
+  float temperature = 3;                 // 高温采样 (默认 1.5)
+}
+
+message DreamResponse {
+  string npc_id = 1;
+  string dream_text = 2;                 // 梦境文本描述
+  string dream_imagery = 3;             // 梦境图像描述 (用于 Image Gen)
+  repeated string distorted_memories = 4; // 扭曲的记忆引用
+  float surrealism_score = 5;           // 超现实度评分
+}

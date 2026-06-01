@@ -1,0 +1,12 @@
+[package]
+name = "sp-economy-engine"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "SparkNode 经济引擎 ($SPARK 代币 + 角色 DAO)"
+
+[dependencies]
+sp-common.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+uuid.workspace = true

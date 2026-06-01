@@ -1,0 +1,45 @@
+[package]
+name = "sp-gateway"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "SparkNode API 网关 (Axum + WebSocket + gRPC)"
+
+[[bin]]
+name = "sp-gateway"
+path = "src/main.rs"
+
+[dependencies]
+sp-common.workspace = true
+sp-narrative-engine.workspace = true
+
+axum.workspace = true
+reqwest.workspace = true
+async-stream = "0.3"
+axum-extra.workspace = true
+tower.workspace = true
+tower-http.workspace = true
+
+tokio.workspace = true
+tokio-stream.workspace = true
+futures.workspace = true
+
+serde.workspace = true
+serde_json.workspace = true
+uuid.workspace = true
+chrono.workspace = true
+
+sqlx.workspace = true
+redis.workspace = true
+
+tonic.workspace = true
+prost.workspace = true
+
+anyhow.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+dotenvy.workspace = true
+
+# JWT
+jsonwebtoken = "8"

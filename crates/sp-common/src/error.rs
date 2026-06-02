@@ -61,6 +61,10 @@ pub enum SpError {
     #[error("gRPC 调用失败: {0}")]
     Grpc(#[from] tonic::Status),
 
+    // ── 限流错误 ──
+    #[error("请求过于频繁: {0}")]
+    TooManyRequests(String),
+
     // ── 通用错误 ──
     #[error("序列化错误: {0}")]
     Serialization(#[from] serde_json::Error),
@@ -96,6 +100,8 @@ impl SpError {
             SpError::DagCycleDetected { .. }
             | SpError::ProbabilityNotNormalized { .. }
             | SpError::MdpMatrixError { .. } => 422,
+
+            SpError::TooManyRequests(_) => 429,
 
             _ => 500,
         }

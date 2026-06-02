@@ -7,6 +7,7 @@ use sp_common::types::{MdpConfig, ObserverSignal};
 use sp_narrative_engine::mdp::matrix::{TransitionEntry, TransitionMatrix};
 use sp_narrative_engine::mdp::observer::ObserverCollapse;
 use sqlx::PgPool;
+use sqlx::Row;
 use uuid::Uuid;
 
 /// 從 DB 載入轉移矩陣
@@ -14,25 +15,31 @@ pub async fn load_transition_matrix(
     pool: &PgPool,
     story_id: Uuid,
 ) -> Result<TransitionMatrix, SpError> {
-    let edges = sqlx::query!(
+    let edges = sqlx::query(
         r#"SELECT id, source_node_id, target_node_id, probability, reward_signal, observer_weight
-           FROM narrative_edges WHERE story_id = $1"#,
-        story_id
+           FROM narrative_edges WHERE story_id = $1"#
     )
+    .bind(story_id)
     .fetch_all(pool)
     .await
     .map_err(SpError::Database)?;
 
     let mut matrix = TransitionMatrix::new(MdpConfig::default());
     for e in edges {
+        let id: Uuid = e.get("id");
+        let source_node_id: Uuid = e.get("source_node_id");
+        let target_node_id: Uuid = e.get("target_node_id");
+        let probability: Option<f64> = e.get("probability");
+        let reward_signal: Option<f64> = e.get("reward_signal");
+        let observer_weight: Option<f64> = e.get("observer_weight");
         matrix.add_transition(
-            e.source_node_id,
+            source_node_id,
             TransitionEntry {
-                edge_id: e.id,
-                target_node_id: e.target_node_id,
-                probability: e.probability.unwrap_or(0.0) as f64,
-                reward: e.reward_signal.unwrap_or(0.0) as f64,
-                observer_weight: e.observer_weight.unwrap_or(0.0) as f64,
+                edge_id: id,
+                target_node_id,
+                probability: probability.unwrap_or(0.0),
+                reward: reward_signal.unwrap_or(0.0),
+                observer_weight: observer_weight.unwrap_or(0.0),
             },
         );
     }
@@ -51,16 +58,16 @@ pub async fn apply_collapse(
     let collapse = ObserverCollapse::new(matrix.config.observer_alpha);
 
     let entity_map: HashMap<Uuid, Vec<Uuid>> = if let Some(focused) = signal.focused_entity_id {
-        let rows = sqlx::query!(
+        let rows = sqlx::query(
             r#"SELECT id FROM narrative_edges
-               WHERE story_id = $1 AND (source_node_id = $2 OR target_node_id = $2)"#,
-            story_id,
-            focused
+               WHERE story_id = $1 AND (source_node_id = $2 OR target_node_id = $2)"#
         )
+        .bind(story_id)
+        .bind(focused)
         .fetch_all(pool)
         .await
         .map_err(SpError::Database)?;
-        let edge_ids: Vec<Uuid> = rows.iter().map(|r| r.id).collect();
+        let edge_ids: Vec<Uuid> = rows.iter().map(|r| r.get("id")).collect();
         let mut map = HashMap::new();
         map.insert(focused, edge_ids);
         map
@@ -84,14 +91,14 @@ pub async fn apply_collapse(
     let mut updates = Vec::new();
     if let Some(entries) = matrix.matrix.get(&source_node_id) {
         for entry in entries {
-            sqlx::query!(
+            sqlx::query(
                 r#"UPDATE narrative_edges
                    SET probability = $2, observer_weight = $3, collapse_count = collapse_count + 1
-                   WHERE id = $1"#,
-                entry.edge_id,
-                entry.probability,
-                entry.observer_weight,
+                   WHERE id = $1"#
             )
+            .bind(entry.edge_id)
+            .bind(entry.probability)
+            .bind(entry.observer_weight)
             .execute(pool)
             .await
             .map_err(SpError::Database)?;

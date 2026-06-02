@@ -155,7 +155,7 @@ impl NarrativeService for NarrativeServiceImpl {
         // 执行命令
         let events = graph.handle_command(command, actor_id)
             .map_err(|e| match e {
-                AggregateError::CycleDetected { source, target } => {
+                AggregateError::CycleDetected(source, target) => {
                     Status::failed_precondition(format!("环路检测: {} → {}", source, target))
                 }
                 AggregateError::NodeNotFound(id) => {

@@ -14,5 +14,5 @@ pub use story_node::*;
 pub use validation::*;
 pub use edge::*;
 pub use world_state::*;
-pub use npc::*;
+pub use npc::{Npc, PersonalityVector, EmotionalState, NpcRelationship, NpcMemory, MemoryType, AutonomyLevel};
 pub use probability::*;

@@ -10,11 +10,13 @@ use axum::{
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+use sqlx::Row;
 use uuid::Uuid;
 
 use crate::middleware::AuthUser;
 use crate::services;
 use crate::AppState;
+use crate::error::SpErrorWrapper;
 use sp_common::error::SpError;
 
 /// 故事请求 DTO
@@ -50,23 +52,23 @@ async fn create_story(
     State(state): State<AppState>,
     Extension(auth): Extension<AuthUser>,
     Json(req): Json<CreateStoryRequest>,
-) -> Result<(StatusCode, Json<Value>), SpError> {
+) -> Result<(StatusCode, Json<Value>), SpErrorWrapper> {
     let story_id = Uuid::new_v4();
     let now = chrono::Utc::now();
 
-    sqlx::query!(
+    sqlx::query(
         r#"
         INSERT INTO stories (id, title, description, author_id, genre, created_at, updated_at)
         VALUES ($1, $2, $3, $4, $5, $6, $7)
-        "#,
-        story_id,
-        req.title,
-        req.description,
-        auth.0,
-        req.genre.as_deref().unwrap_or(&[]),
-        now,
-        now,
+        "#
     )
+    .bind(story_id)
+    .bind(&req.title)
+    .bind(&req.description)
+    .bind(auth.0)
+    .bind(req.genre.as_deref().unwrap_or(&[]))
+    .bind(now)
+    .bind(now)
     .execute(&state.db)
     .await
     .map_err(SpError::Database)?;
@@ -87,8 +89,8 @@ async fn create_story(
 /// GET /api/v1/stories - 列出故事
 async fn list_stories(
     State(state): State<AppState>,
-) -> Result<Json<Value>, SpError> {
-    let stories = sqlx::query!(
+) -> Result<Json<Value>, SpErrorWrapper> {
+    let stories = sqlx::query(
         r#"SELECT id, title, description, genre, status, created_at, updated_at FROM stories ORDER BY created_at DESC LIMIT 50"#
     )
     .fetch_all(&state.db)
@@ -98,14 +100,21 @@ async fn list_stories(
     let items: Vec<Value> = stories
         .iter()
         .map(|s| {
+            let id: Uuid = s.get("id");
+            let title: String = s.get("title");
+            let description: Option<String> = s.get("description");
+            let genre: Option<Vec<String>> = s.get("genre");
+            let status: Option<String> = s.get("status");
+            let created_at: Option<chrono::DateTime<chrono::Utc>> = s.get("created_at");
+            let updated_at: Option<chrono::DateTime<chrono::Utc>> = s.get("updated_at");
             json!({
-                "id": s.id,
-                "title": s.title,
-                "description": s.description,
-                "genre": s.genre,
-                "status": s.status,
-                "created_at": s.created_at.map(|t| t.to_rfc3339()),
-                "updated_at": s.updated_at.map(|t| t.to_rfc3339()),
+                "id": id,
+                "title": title,
+                "description": description,
+                "genre": genre,
+                "status": status,
+                "created_at": created_at.map(|t| t.to_rfc3339()),
+                "updated_at": updated_at.map(|t| t.to_rfc3339()),
             })
         })
         .collect();
@@ -117,29 +126,41 @@ async fn list_stories(
 async fn get_story(
     State(state): State<AppState>,
     Path(story_id): Path<Uuid>,
-) -> Result<Json<Value>, SpError> {
-    let story = sqlx::query!(
-        r#"SELECT id, title, description, genre, world_rules, mdp_config, status, version, created_at, updated_at FROM stories WHERE id = $1"#,
-        story_id
+) -> Result<Json<Value>, SpErrorWrapper> {
+    let story = sqlx::query(
+        r#"SELECT id, title, description, genre, world_rules, mdp_config, status, version, created_at, updated_at FROM stories WHERE id = $1"#
     )
+    .bind(story_id)
     .fetch_optional(&state.db)
     .await
     .map_err(SpError::Database)?;
 
     match story {
-        Some(s) => Ok(Json(json!({
-            "id": s.id,
-            "title": s.title,
-            "description": s.description,
-            "genre": s.genre,
-            "world_rules": s.world_rules,
-            "mdp_config": s.mdp_config,
-            "status": s.status,
-            "version": s.version,
-            "created_at": s.created_at.map(|t| t.to_rfc3339()),
-            "updated_at": s.updated_at.map(|t| t.to_rfc3339()),
-        }))),
-        None => Err(SpError::StoryNotFound(story_id)),
+        Some(s) => {
+            let id: Uuid = s.get("id");
+            let title: String = s.get("title");
+            let description: Option<String> = s.get("description");
+            let genre: Option<Vec<String>> = s.get("genre");
+            let world_rules: Option<serde_json::Value> = s.get("world_rules");
+            let mdp_config: Option<serde_json::Value> = s.get("mdp_config");
+            let status: Option<String> = s.get("status");
+            let version: Option<i32> = s.get("version");
+            let created_at: Option<chrono::DateTime<chrono::Utc>> = s.get("created_at");
+            let updated_at: Option<chrono::DateTime<chrono::Utc>> = s.get("updated_at");
+            Ok(Json(json!({
+                "id": id,
+                "title": title,
+                "description": description,
+                "genre": genre,
+                "world_rules": world_rules,
+                "mdp_config": mdp_config,
+                "status": status,
+                "version": version,
+                "created_at": created_at.map(|t| t.to_rfc3339()),
+                "updated_at": updated_at.map(|t| t.to_rfc3339()),
+            })))
+        },
+        None => Err(SpError::StoryNotFound(story_id).into()),
     }
 }
 
@@ -148,11 +169,11 @@ async fn update_story(
     State(state): State<AppState>,
     Path(story_id): Path<Uuid>,
     Json(req): Json<UpdateStoryRequest>,
-) -> Result<Json<Value>, SpError> {
+) -> Result<Json<Value>, SpErrorWrapper> {
     // 简化实现: 使用 sqlx::query 动态构建
     let now = chrono::Utc::now();
 
-    sqlx::query!(
+    sqlx::query(
         r#"
         UPDATE stories 
         SET title = COALESCE($2, title),
@@ -162,15 +183,15 @@ async fn update_story(
             status = COALESCE($6, status),
             updated_at = $7
         WHERE id = $1
-        "#,
-        story_id,
-        req.title,
-        req.description,
-        req.genre.as_deref(),
-        req.world_rules,
-        req.status,
-        now,
+        "#
     )
+    .bind(story_id)
+    .bind(&req.title)
+    .bind(&req.description)
+    .bind(req.genre.as_deref())
+    .bind(&req.world_rules)
+    .bind(&req.status)
+    .bind(now)
     .execute(&state.db)
     .await
     .map_err(SpError::Database)?;
@@ -182,8 +203,9 @@ async fn update_story(
 async fn delete_story(
     State(state): State<AppState>,
     Path(story_id): Path<Uuid>,
-) -> Result<StatusCode, SpError> {
-    sqlx::query!("DELETE FROM stories WHERE id = $1", story_id)
+) -> Result<StatusCode, SpErrorWrapper> {
+    sqlx::query("DELETE FROM stories WHERE id = $1")
+        .bind(story_id)
         .execute(&state.db)
         .await
         .map_err(SpError::Database)?;
@@ -195,23 +217,23 @@ async fn delete_story(
 async fn get_story_dag(
     State(state): State<AppState>,
     Path(story_id): Path<Uuid>,
-) -> Result<Json<Value>, SpError> {
+) -> Result<Json<Value>, SpErrorWrapper> {
     // 查询所有节点
-    let nodes = sqlx::query!(
+    let nodes = sqlx::query(
         r#"SELECT id, node_type, title, content, position_x, position_y 
-           FROM story_nodes WHERE story_id = $1 ORDER BY created_at"#,
-        story_id
+           FROM story_nodes WHERE story_id = $1 ORDER BY created_at"#
     )
+    .bind(story_id)
     .fetch_all(&state.db)
     .await
     .map_err(SpError::Database)?;
 
     // 查询所有边
-    let edges = sqlx::query!(
+    let edges = sqlx::query(
         r#"SELECT id, source_node_id, target_node_id, edge_type, probability, observer_weight
-           FROM narrative_edges WHERE story_id = $1"#,
-        story_id
+           FROM narrative_edges WHERE story_id = $1"#
     )
+    .bind(story_id)
     .fetch_all(&state.db)
     .await
     .map_err(SpError::Database)?;
@@ -219,13 +241,19 @@ async fn get_story_dag(
     let node_items: Vec<Value> = nodes
         .iter()
         .map(|n| {
+            let id: Uuid = n.get("id");
+            let node_type: String = n.get("node_type");
+            let title: Option<String> = n.get("title");
+            let content: Option<String> = n.get("content");
+            let position_x: Option<f64> = n.get("position_x");
+            let position_y: Option<f64> = n.get("position_y");
             json!({
-                "id": n.id,
-                "node_type": n.node_type,
-                "title": n.title,
-                "content": n.content,
-                "position_x": n.position_x,
-                "position_y": n.position_y,
+                "id": id,
+                "node_type": node_type,
+                "title": title,
+                "content": content,
+                "position_x": position_x,
+                "position_y": position_y,
             })
         })
         .collect();
@@ -233,13 +261,19 @@ async fn get_story_dag(
     let edge_items: Vec<Value> = edges
         .iter()
         .map(|e| {
+            let id: Uuid = e.get("id");
+            let source_node_id: Uuid = e.get("source_node_id");
+            let target_node_id: Uuid = e.get("target_node_id");
+            let edge_type: String = e.get("edge_type");
+            let probability: Option<f64> = e.get("probability");
+            let observer_weight: Option<f64> = e.get("observer_weight");
             json!({
-                "id": e.id,
-                "source": e.source_node_id,
-                "target": e.target_node_id,
-                "edge_type": e.edge_type,
-                "probability": e.probability,
-                "observer_weight": e.observer_weight,
+                "id": id,
+                "source": source_node_id,
+                "target": target_node_id,
+                "edge_type": edge_type,
+                "probability": probability,
+                "observer_weight": observer_weight,
             })
         })
         .collect();

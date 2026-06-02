@@ -10,9 +10,11 @@ use axum::{
 };
 use serde::Deserialize;
 use serde_json::{json, Value};
+use sqlx::Row;
 use uuid::Uuid;
 
 use crate::AppState;
+use crate::error::SpErrorWrapper;
 use sp_common::error::SpError;
 use sp_common::types::parse_node_type;
 
@@ -47,27 +49,27 @@ async fn create_node(
     State(state): State<AppState>,
     Path(story_id): Path<Uuid>,
     Json(req): Json<CreateNodeRequest>,
-) -> Result<(StatusCode, Json<Value>), SpError> {
+) -> Result<(StatusCode, Json<Value>), SpErrorWrapper> {
     let node_type = parse_node_type(&req.node_type)?;
     let node_id = Uuid::new_v4();
     let now = chrono::Utc::now();
 
-    sqlx::query!(
+    sqlx::query(
         r#"
         INSERT INTO story_nodes (id, story_id, node_type, title, content, position_x, position_y, metadata, created_at, updated_at)
         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-        "#,
-        node_id,
-        story_id,
-        node_type.as_str(),
-        req.title,
-        req.content,
-        req.position_x.unwrap_or(0.0),
-        req.position_y.unwrap_or(0.0),
-        req.metadata.unwrap_or_else(|| json!({})),
-        now,
-        now,
+        "#
     )
+    .bind(node_id)
+    .bind(story_id)
+    .bind(node_type.as_str())
+    .bind(&req.title)
+    .bind(&req.content)
+    .bind(req.position_x.unwrap_or(0.0))
+    .bind(req.position_y.unwrap_or(0.0))
+    .bind(req.metadata.unwrap_or_else(|| json!({})))
+    .bind(now)
+    .bind(now)
     .execute(&state.db)
     .await
     .map_err(SpError::Database)?;
@@ -90,12 +92,12 @@ async fn create_node(
 async fn list_nodes(
     State(state): State<AppState>,
     Path(story_id): Path<Uuid>,
-) -> Result<Json<Value>, SpError> {
-    let nodes = sqlx::query!(
+) -> Result<Json<Value>, SpErrorWrapper> {
+    let nodes = sqlx::query(
         r#"SELECT id, node_type, title, content, position_x, position_y, version, created_at, updated_at
-           FROM story_nodes WHERE story_id = $1 ORDER BY created_at"#,
-        story_id
+           FROM story_nodes WHERE story_id = $1 ORDER BY created_at"#
     )
+    .bind(story_id)
     .fetch_all(&state.db)
     .await
     .map_err(SpError::Database)?;
@@ -103,16 +105,25 @@ async fn list_nodes(
     let items: Vec<Value> = nodes
         .iter()
         .map(|n| {
+            let id: Uuid = n.get("id");
+            let node_type: String = n.get("node_type");
+            let title: Option<String> = n.get("title");
+            let content: Option<String> = n.get("content");
+            let position_x: Option<f64> = n.get("position_x");
+            let position_y: Option<f64> = n.get("position_y");
+            let version: Option<i32> = n.get("version");
+            let created_at: Option<chrono::DateTime<chrono::Utc>> = n.get("created_at");
+            let updated_at: Option<chrono::DateTime<chrono::Utc>> = n.get("updated_at");
             json!({
-                "id": n.id,
-                "node_type": n.node_type,
-                "title": n.title,
-                "content": n.content,
-                "position_x": n.position_x,
-                "position_y": n.position_y,
-                "version": n.version,
-                "created_at": n.created_at.map(|t| t.to_rfc3339()),
-                "updated_at": n.updated_at.map(|t| t.to_rfc3339()),
+                "id": id,
+                "node_type": node_type,
+                "title": title,
+                "content": content,
+                "position_x": position_x,
+                "position_y": position_y,
+                "version": version,
+                "created_at": created_at.map(|t| t.to_rfc3339()),
+                "updated_at": updated_at.map(|t| t.to_rfc3339()),
             })
         })
         .collect();
@@ -124,36 +135,51 @@ async fn list_nodes(
 async fn get_node(
     State(state): State<AppState>,
     Path((story_id, node_id)): Path<(Uuid, Uuid)>,
-) -> Result<Json<Value>, SpError> {
-    let node = sqlx::query!(
+) -> Result<Json<Value>, SpErrorWrapper> {
+    let node = sqlx::query(
         r#"SELECT id, node_type, title, content, position_x, position_y, metadata, world_snapshot,
                   llm_provider, llm_prompt, llm_tokens_used, version, created_at, updated_at
-           FROM story_nodes WHERE id = $1 AND story_id = $2"#,
-        node_id,
-        story_id
+           FROM story_nodes WHERE id = $1 AND story_id = $2"#
     )
+    .bind(node_id)
+    .bind(story_id)
     .fetch_optional(&state.db)
     .await
     .map_err(SpError::Database)?;
 
     match node {
-        Some(n) => Ok(Json(json!({
-            "id": n.id,
-            "story_id": story_id,
-            "node_type": n.node_type,
-            "title": n.title,
-            "content": n.content,
-            "position_x": n.position_x,
-            "position_y": n.position_y,
-            "metadata": n.metadata,
-            "world_snapshot": n.world_snapshot,
-            "llm_provider": n.llm_provider,
-            "llm_tokens_used": n.llm_tokens_used,
-            "version": n.version,
-            "created_at": n.created_at.map(|t| t.to_rfc3339()),
-            "updated_at": n.updated_at.map(|t| t.to_rfc3339()),
-        }))),
-        None => Err(SpError::NodeNotFound(node_id)),
+        Some(n) => {
+            let id: Uuid = n.get("id");
+            let node_type: String = n.get("node_type");
+            let title: Option<String> = n.get("title");
+            let content: Option<String> = n.get("content");
+            let position_x: Option<f64> = n.get("position_x");
+            let position_y: Option<f64> = n.get("position_y");
+            let metadata: Option<serde_json::Value> = n.get("metadata");
+            let world_snapshot: Option<serde_json::Value> = n.get("world_snapshot");
+            let llm_provider: Option<String> = n.get("llm_provider");
+            let llm_tokens_used: Option<i32> = n.get("llm_tokens_used");
+            let version: Option<i32> = n.get("version");
+            let created_at: Option<chrono::DateTime<chrono::Utc>> = n.get("created_at");
+            let updated_at: Option<chrono::DateTime<chrono::Utc>> = n.get("updated_at");
+            Ok(Json(json!({
+                "id": id,
+                "story_id": story_id,
+                "node_type": node_type,
+                "title": title,
+                "content": content,
+                "position_x": position_x,
+                "position_y": position_y,
+                "metadata": metadata,
+                "world_snapshot": world_snapshot,
+                "llm_provider": llm_provider,
+                "llm_tokens_used": llm_tokens_used,
+                "version": version,
+                "created_at": created_at.map(|t| t.to_rfc3339()),
+                "updated_at": updated_at.map(|t| t.to_rfc3339()),
+            })))
+        },
+        None => Err(SpError::NodeNotFound(node_id).into()),
     }
 }
 
@@ -162,10 +188,10 @@ async fn update_node(
     State(state): State<AppState>,
     Path((story_id, node_id)): Path<(Uuid, Uuid)>,
     Json(req): Json<UpdateNodeRequest>,
-) -> Result<Json<Value>, SpError> {
+) -> Result<Json<Value>, SpErrorWrapper> {
     let now = chrono::Utc::now();
 
-    sqlx::query!(
+    sqlx::query(
         r#"
         UPDATE story_nodes 
         SET title = COALESCE($3, title),
@@ -175,15 +201,15 @@ async fn update_node(
             updated_at = $7,
             version = version + 1
         WHERE id = $1 AND story_id = $2
-        "#,
-        node_id,
-        story_id,
-        req.title,
-        req.content,
-        req.position_x,
-        req.position_y,
-        now,
+        "#
     )
+    .bind(node_id)
+    .bind(story_id)
+    .bind(&req.title)
+    .bind(&req.content)
+    .bind(req.position_x)
+    .bind(req.position_y)
+    .bind(now)
     .execute(&state.db)
     .await
     .map_err(SpError::Database)?;
@@ -195,19 +221,21 @@ async fn update_node(
 async fn delete_node(
     State(state): State<AppState>,
     Path((story_id, node_id)): Path<(Uuid, Uuid)>,
-) -> Result<StatusCode, SpError> {
+) -> Result<StatusCode, SpErrorWrapper> {
     // 先删除关联边
-    sqlx::query!(
-        "DELETE FROM narrative_edges WHERE story_id = $1 AND (source_node_id = $2 OR target_node_id = $2)",
-        story_id,
-        node_id
+    sqlx::query(
+        "DELETE FROM narrative_edges WHERE story_id = $1 AND (source_node_id = $2 OR target_node_id = $2)"
     )
+    .bind(story_id)
+    .bind(node_id)
     .execute(&state.db)
     .await
     .map_err(SpError::Database)?;
 
     // 再删除节点
-    sqlx::query!("DELETE FROM story_nodes WHERE id = $1 AND story_id = $2", node_id, story_id)
+    sqlx::query("DELETE FROM story_nodes WHERE id = $1 AND story_id = $2")
+        .bind(node_id)
+        .bind(story_id)
         .execute(&state.db)
         .await
         .map_err(SpError::Database)?;

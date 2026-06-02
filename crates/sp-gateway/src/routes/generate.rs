@@ -8,14 +8,15 @@ use axum::{
     routing::post,
     Json, Router,
 };
-use futures::stream::{self, Stream};
+use futures::stream::{self, Stream, StreamExt as FuturesStreamExt};
 use serde::Deserialize;
 use serde_json::{json, Value};
 use std::convert::Infallible;
-use tokio_stream::StreamExt;
+
 use uuid::Uuid;
 
 use crate::AppState;
+use crate::error::SpErrorWrapper;
 
 #[derive(Debug, Deserialize)]
 pub struct GenerateRequest {
@@ -77,8 +78,9 @@ async fn generate_stream(
                     Ok(response) => {
                         let mut byte_stream = response.bytes_stream();
                         let mut events: Vec<Result<Event, Infallible>> = Vec::new();
-                        while let Some(chunk) = byte_stream.next().await {
-                            if let Ok(bytes) = chunk {
+                        use tokio_stream::StreamExt;
+                        while let Some(chunk) = tokio_stream::StreamExt::next(&mut byte_stream).await {
+                            if let Ok(bytes) = chunk.as_ref() {
                                 let text = String::from_utf8_lossy(&bytes);
                                 for line in text.lines() {
                                     let chunk_text = line
@@ -113,7 +115,7 @@ async fn generate_stream(
                 }
             }
         })
-        .flat_map(stream::iter);
+        .flat_map(|events: Vec<Result<Event, Infallible>>| futures::stream::iter(events));
 
     Sse::new(stream)
 }
@@ -122,7 +124,7 @@ async fn generate_stream(
 async fn generate_compare(
     State(state): State<AppState>,
     Json(req): Json<GenerateRequest>,
-) -> Result<Json<Value>, sp_common::error::SpError> {
+) -> Result<Json<Value>, SpErrorWrapper> {
     let providers = req.target_providers.unwrap_or_else(|| {
         vec![
             "openai".to_string(),

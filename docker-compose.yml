@@ -46,7 +46,7 @@ services:
 
   # ── Memgraph (内存级图数据库 - 叙事 DAG + 社会关系) ──
   memgraph:
-    image: memgraph/memgraph-platform:2.19.0
+    image: memgraph/memgraph-platform:latest
     container_name: sp-memgraph
     ports:
       - "7687:7687"   # Bolt 协议

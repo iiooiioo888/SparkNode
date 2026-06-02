@@ -8,14 +8,23 @@ use axum::{
 use serde_json::json;
 use sp_common::error::SpError;
 
-impl IntoResponse for SpError {
+/// 包裝 SpError 以實現外部 trait
+pub struct SpErrorWrapper(pub SpError);
+
+impl IntoResponse for SpErrorWrapper {
     fn into_response(self) -> Response {
         let status =
-            StatusCode::from_u16(self.status_code()).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
+            StatusCode::from_u16(self.0.status_code()).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
         let body = Json(json!({
-            "error": self.to_string(),
-            "code": self.status_code(),
+            "error": self.0.to_string(),
+            "code": self.0.status_code(),
         }));
         (status, body).into_response()
+    }
+}
+
+impl From<SpError> for SpErrorWrapper {
+    fn from(err: SpError) -> Self {
+        SpErrorWrapper(err)
     }
 }

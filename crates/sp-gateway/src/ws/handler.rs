@@ -182,6 +182,7 @@ async fn dispatch_message(
 
 /// 将事件广播到 Redis PubSub 频道
 async fn broadcast_to_redis(state: &AppState, channel: &str, event: &PulseEvent) {
+    use redis::AsyncCommands;
     if let Ok(serialized) = serde_json::to_string(event) {
         let _: Result<(), _> = state
             .redis

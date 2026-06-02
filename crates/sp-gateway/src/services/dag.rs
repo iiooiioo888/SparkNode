@@ -3,56 +3,66 @@
 use sp_common::error::SpError;
 use sp_narrative_engine::dag::graph::{DagEdge, DagNode, DirectedAcyclicGraph};
 use sqlx::PgPool;
+use sqlx::Row;
 use uuid::Uuid;
 
 /// 從 DB 載入故事 DAG
 pub async fn load_story_dag(pool: &PgPool, story_id: Uuid) -> Result<DirectedAcyclicGraph, SpError> {
-    let story_exists = sqlx::query_scalar!(
-        r#"SELECT EXISTS(SELECT 1 FROM stories WHERE id = $1)"#,
-        story_id
+    let story_exists: bool = sqlx::query_scalar(
+        r#"SELECT EXISTS(SELECT 1 FROM stories WHERE id = $1)"#
     )
+    .bind(story_id)
     .fetch_one(pool)
     .await
     .map_err(SpError::Database)?;
 
-    if !story_exists.unwrap_or(false) {
+    if !story_exists {
         return Err(SpError::StoryNotFound(story_id));
     }
 
-    let nodes = sqlx::query!(
-        r#"SELECT id, node_type, title FROM story_nodes WHERE story_id = $1"#,
-        story_id
+    let nodes = sqlx::query(
+        r#"SELECT id, node_type, title FROM story_nodes WHERE story_id = $1"#
     )
+    .bind(story_id)
     .fetch_all(pool)
     .await
     .map_err(SpError::Database)?;
 
-    let edges = sqlx::query!(
+    let edges = sqlx::query(
         r#"SELECT id, source_node_id, target_node_id, edge_type, probability, observer_weight
-           FROM narrative_edges WHERE story_id = $1"#,
-        story_id
+           FROM narrative_edges WHERE story_id = $1"#
     )
+    .bind(story_id)
     .fetch_all(pool)
     .await
     .map_err(SpError::Database)?;
 
     let mut dag = DirectedAcyclicGraph::new();
     for n in nodes {
+        let id: Uuid = n.get("id");
+        let node_type: String = n.get("node_type");
+        let title: Option<String> = n.get("title");
         dag.add_node(DagNode {
-            id: n.id,
-            node_type: n.node_type,
-            title: n.title,
+            id,
+            node_type,
+            title,
         });
     }
 
     for e in edges {
+        let id: Uuid = e.get("id");
+        let source: Uuid = e.get("source_node_id");
+        let target: Uuid = e.get("target_node_id");
+        let edge_type: String = e.get("edge_type");
+        let probability: Option<f64> = e.get("probability");
+        let observer_weight: Option<f64> = e.get("observer_weight");
         dag.add_edge(DagEdge {
-            id: e.id,
-            source: e.source_node_id,
-            target: e.target_node_id,
-            edge_type: e.edge_type,
-            probability: e.probability.unwrap_or(0.0) as f64,
-            observer_weight: e.observer_weight.unwrap_or(0.0) as f64,
+            id,
+            source,
+            target,
+            edge_type,
+            probability: probability.unwrap_or(0.0),
+            observer_weight: observer_weight.unwrap_or(0.0),
         })?;
     }
 

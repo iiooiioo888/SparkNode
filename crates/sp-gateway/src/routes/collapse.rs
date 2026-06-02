@@ -11,6 +11,7 @@ use uuid::Uuid;
 
 use crate::services;
 use crate::AppState;
+use crate::error::SpErrorWrapper;
 use sp_common::error::SpError;
 use sp_common::types::ObserverSignal;
 
@@ -28,7 +29,7 @@ async fn observer_collapse(
     State(state): State<AppState>,
     Path(story_id): Path<Uuid>,
     Json(req): Json<CollapseRequest>,
-) -> Result<Json<Value>, SpError> {
+) -> Result<Json<Value>, SpErrorWrapper> {
     let shifts = services::apply_collapse(
         &state.db,
         story_id,

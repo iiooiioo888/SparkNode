@@ -10,10 +10,12 @@ use axum::{
 };
 use serde::Deserialize;
 use serde_json::{json, Value};
+use sqlx::Row;
 use uuid::Uuid;
 
 use crate::services::{self, normalized_probability_for_source};
 use crate::AppState;
+use crate::error::SpErrorWrapper;
 use sp_common::error::SpError;
 use sp_common::types::parse_edge_type;
 
@@ -47,7 +49,7 @@ async fn create_edge(
     State(state): State<AppState>,
     Path(story_id): Path<Uuid>,
     Json(req): Json<CreateEdgeRequest>,
-) -> Result<(StatusCode, Json<Value>), SpError> {
+) -> Result<(StatusCode, Json<Value>), SpErrorWrapper> {
     let edge_type = parse_edge_type(&req.edge_type)?;
 
     services::validate_new_edge(
@@ -58,30 +60,34 @@ async fn create_edge(
     )
     .await?;
 
-    let existing = sqlx::query!(
+    let existing = sqlx::query(
         r#"SELECT id, probability FROM narrative_edges
-           WHERE story_id = $1 AND source_node_id = $2"#,
-        story_id,
-        req.source_node_id
+           WHERE story_id = $1 AND source_node_id = $2"#
     )
+    .bind(story_id)
+    .bind(req.source_node_id)
     .fetch_all(&state.db)
     .await
     .map_err(SpError::Database)?;
 
     let existing_probs: Vec<f64> = existing
         .iter()
-        .map(|e| e.probability.unwrap_or(0.0) as f64)
+        .map(|e| {
+            let prob: Option<f64> = e.get("probability");
+            prob.unwrap_or(0.0)
+        })
         .collect();
     let requested = req.probability.unwrap_or(1.0);
     let (renormalized_old, new_prob) =
         normalized_probability_for_source(&existing_probs, requested);
 
     for (row, prob) in existing.iter().zip(renormalized_old.iter()) {
-        sqlx::query!(
-            r#"UPDATE narrative_edges SET probability = $2 WHERE id = $1"#,
-            row.id,
-            *prob
+        let row_id: Uuid = row.get("id");
+        sqlx::query(
+            r#"UPDATE narrative_edges SET probability = $2 WHERE id = $1"#
         )
+        .bind(row_id)
+        .bind(*prob)
         .execute(&state.db)
         .await
         .map_err(SpError::Database)?;
@@ -90,21 +96,21 @@ async fn create_edge(
     let edge_id = Uuid::new_v4();
     let now = chrono::Utc::now();
 
-    sqlx::query!(
+    sqlx::query(
         r#"
         INSERT INTO narrative_edges (id, story_id, source_node_id, target_node_id, edge_type, probability, reward_signal, conditions, created_at)
         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-        "#,
-        edge_id,
-        story_id,
-        req.source_node_id,
-        req.target_node_id,
-        edge_type.as_str(),
-        new_prob,
-        req.reward_signal.unwrap_or(0.0),
-        req.conditions.unwrap_or_else(|| json!([])),
-        now,
+        "#
     )
+    .bind(edge_id)
+    .bind(story_id)
+    .bind(req.source_node_id)
+    .bind(req.target_node_id)
+    .bind(edge_type.as_str())
+    .bind(new_prob)
+    .bind(req.reward_signal.unwrap_or(0.0))
+    .bind(req.conditions.unwrap_or_else(|| json!([])))
+    .bind(now)
     .execute(&state.db)
     .await
     .map_err(SpError::Database)?;
@@ -128,12 +134,12 @@ async fn create_edge(
 async fn list_edges(
     State(state): State<AppState>,
     Path(story_id): Path<Uuid>,
-) -> Result<Json<Value>, SpError> {
-    let edges = sqlx::query!(
+) -> Result<Json<Value>, SpErrorWrapper> {
+    let edges = sqlx::query(
         r#"SELECT id, source_node_id, target_node_id, edge_type, probability, reward_signal, observer_weight, collapse_count
-           FROM narrative_edges WHERE story_id = $1"#,
-        story_id
+           FROM narrative_edges WHERE story_id = $1"#
     )
+    .bind(story_id)
     .fetch_all(&state.db)
     .await
     .map_err(SpError::Database)?;
@@ -141,15 +147,23 @@ async fn list_edges(
     let items: Vec<Value> = edges
         .iter()
         .map(|e| {
+            let id: Uuid = e.get("id");
+            let source_node_id: Uuid = e.get("source_node_id");
+            let target_node_id: Uuid = e.get("target_node_id");
+            let edge_type: String = e.get("edge_type");
+            let probability: Option<f64> = e.get("probability");
+            let reward_signal: Option<f64> = e.get("reward_signal");
+            let observer_weight: Option<f64> = e.get("observer_weight");
+            let collapse_count: Option<i32> = e.get("collapse_count");
             json!({
-                "id": e.id,
-                "source": e.source_node_id,
-                "target": e.target_node_id,
-                "edge_type": e.edge_type,
-                "probability": e.probability,
-                "reward_signal": e.reward_signal,
-                "observer_weight": e.observer_weight,
-                "collapse_count": e.collapse_count,
+                "id": id,
+                "source": source_node_id,
+                "target": target_node_id,
+                "edge_type": edge_type,
+                "probability": probability,
+                "reward_signal": reward_signal,
+                "observer_weight": observer_weight,
+                "collapse_count": collapse_count,
             })
         })
         .collect();
@@ -161,32 +175,44 @@ async fn list_edges(
 async fn get_edge(
     State(state): State<AppState>,
     Path((story_id, edge_id)): Path<(Uuid, Uuid)>,
-) -> Result<Json<Value>, SpError> {
-    let edge = sqlx::query!(
+) -> Result<Json<Value>, SpErrorWrapper> {
+    let edge = sqlx::query(
         r#"SELECT id, source_node_id, target_node_id, edge_type, probability, reward_signal, observer_weight, collapse_count, conditions, created_at
-           FROM narrative_edges WHERE id = $1 AND story_id = $2"#,
-        edge_id,
-        story_id
+           FROM narrative_edges WHERE id = $1 AND story_id = $2"#
     )
+    .bind(edge_id)
+    .bind(story_id)
     .fetch_optional(&state.db)
     .await
     .map_err(SpError::Database)?;
 
     match edge {
-        Some(e) => Ok(Json(json!({
-            "id": e.id,
-            "story_id": story_id,
-            "source": e.source_node_id,
-            "target": e.target_node_id,
-            "edge_type": e.edge_type,
-            "probability": e.probability,
-            "reward_signal": e.reward_signal,
-            "observer_weight": e.observer_weight,
-            "collapse_count": e.collapse_count,
-            "conditions": e.conditions,
-            "created_at": e.created_at.map(|t| t.to_rfc3339()),
-        }))),
-        None => Err(SpError::EdgeNotFound(edge_id)),
+        Some(e) => {
+            let id: Uuid = e.get("id");
+            let source_node_id: Uuid = e.get("source_node_id");
+            let target_node_id: Uuid = e.get("target_node_id");
+            let edge_type: String = e.get("edge_type");
+            let probability: Option<f64> = e.get("probability");
+            let reward_signal: Option<f64> = e.get("reward_signal");
+            let observer_weight: Option<f64> = e.get("observer_weight");
+            let collapse_count: Option<i32> = e.get("collapse_count");
+            let conditions: Option<serde_json::Value> = e.get("conditions");
+            let created_at: Option<chrono::DateTime<chrono::Utc>> = e.get("created_at");
+            Ok(Json(json!({
+                "id": id,
+                "story_id": story_id,
+                "source": source_node_id,
+                "target": target_node_id,
+                "edge_type": edge_type,
+                "probability": probability,
+                "reward_signal": reward_signal,
+                "observer_weight": observer_weight,
+                "collapse_count": collapse_count,
+                "conditions": conditions,
+                "created_at": created_at.map(|t| t.to_rfc3339()),
+            })))
+        },
+        None => Err(SpError::EdgeNotFound(edge_id).into()),
     }
 }
 
@@ -195,74 +221,85 @@ async fn update_edge(
     State(state): State<AppState>,
     Path((story_id, edge_id)): Path<(Uuid, Uuid)>,
     Json(req): Json<UpdateEdgeRequest>,
-) -> Result<Json<Value>, SpError> {
+) -> Result<Json<Value>, SpErrorWrapper> {
     if let Some(new_prob) = req.probability {
-        let edge = sqlx::query!(
-            r#"SELECT source_node_id FROM narrative_edges WHERE id = $1 AND story_id = $2"#,
-            edge_id,
-            story_id
+        let edge = sqlx::query(
+            r#"SELECT source_node_id FROM narrative_edges WHERE id = $1 AND story_id = $2"#
         )
+        .bind(edge_id)
+        .bind(story_id)
         .fetch_optional(&state.db)
         .await
         .map_err(SpError::Database)?;
 
         if let Some(e) = edge {
-            let siblings = sqlx::query!(
+            let source_node_id: Uuid = e.get("source_node_id");
+            let siblings = sqlx::query(
                 r#"SELECT id, probability FROM narrative_edges
-                   WHERE story_id = $1 AND source_node_id = $2"#,
-                story_id,
-                e.source_node_id
+                   WHERE story_id = $1 AND source_node_id = $2"#
             )
+            .bind(story_id)
+            .bind(source_node_id)
             .fetch_all(&state.db)
             .await
             .map_err(SpError::Database)?;
 
             let others: Vec<f64> = siblings
                 .iter()
-                .filter(|s| s.id != edge_id)
-                .map(|s| s.probability.unwrap_or(0.0) as f64)
+                .filter(|s| {
+                    let s_id: Uuid = s.get("id");
+                    s_id != edge_id
+                })
+                .map(|s| {
+                    let prob: Option<f64> = s.get("probability");
+                    prob.unwrap_or(0.0)
+                })
                 .collect();
             let (renorm_old, normalized_new) =
                 normalized_probability_for_source(&others, new_prob);
 
             for (s, prob) in siblings
                 .iter()
-                .filter(|s| s.id != edge_id)
+                .filter(|s| {
+                    let s_id: Uuid = s.get("id");
+                    s_id != edge_id
+                })
                 .zip(renorm_old.iter())
             {
-                sqlx::query!(
-                    r#"UPDATE narrative_edges SET probability = $2 WHERE id = $1"#,
-                    s.id,
-                    *prob
+                let s_id: Uuid = s.get("id");
+                sqlx::query(
+                    r#"UPDATE narrative_edges SET probability = $2 WHERE id = $1"#
                 )
+                .bind(s_id)
+                .bind(*prob)
                 .execute(&state.db)
                 .await
                 .map_err(SpError::Database)?;
             }
 
-            sqlx::query!(
-                r#"UPDATE narrative_edges SET probability = $2 WHERE id = $1"#,
-                edge_id,
-                normalized_new
+            sqlx::query(
+                r#"UPDATE narrative_edges SET probability = $2 WHERE id = $1"#
             )
+            .bind(edge_id)
+            .bind(normalized_new)
             .execute(&state.db)
             .await
             .map_err(SpError::Database)?;
         }
     }
 
-    sqlx::query!(
+    sqlx::query(
         r#"
         UPDATE narrative_edges 
         SET reward_signal = COALESCE($3, reward_signal),
             observer_weight = COALESCE($4, observer_weight)
         WHERE id = $1 AND story_id = $2
-        "#,
-        edge_id,
-        story_id,
-        req.reward_signal,
-        req.observer_weight,
+        "#
     )
+    .bind(edge_id)
+    .bind(story_id)
+    .bind(req.reward_signal)
+    .bind(req.observer_weight)
     .execute(&state.db)
     .await
     .map_err(SpError::Database)?;
@@ -274,8 +311,10 @@ async fn update_edge(
 async fn delete_edge(
     State(state): State<AppState>,
     Path((story_id, edge_id)): Path<(Uuid, Uuid)>,
-) -> Result<StatusCode, SpError> {
-    sqlx::query!("DELETE FROM narrative_edges WHERE id = $1 AND story_id = $2", edge_id, story_id)
+) -> Result<StatusCode, SpErrorWrapper> {
+    sqlx::query("DELETE FROM narrative_edges WHERE id = $1 AND story_id = $2")
+        .bind(edge_id)
+        .bind(story_id)
         .execute(&state.db)
         .await
         .map_err(SpError::Database)?;

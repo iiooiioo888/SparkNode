@@ -14,7 +14,7 @@ mod services;
 mod ws;
 mod grpc;
 
-use axum::{middleware, Router, routing::get};
+use axum::{Router, routing::get};
 use tower_http::cors::{CorsLayer, Any};
 use tower_http::trace::TraceLayer;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
@@ -93,11 +93,11 @@ async fn main() -> anyhow::Result<()> {
         .nest("/stories", routes::stories::router())
         .merge(routes::collapse::router())
         .nest("/generate", routes::generate::router())
-        .route_layer(middleware::from_fn_with_state(
+        .route_layer(axum::middleware::from_fn_with_state(
             state.clone(),
             crate::middleware::rate_limit_middleware,
         ))
-        .route_layer(middleware::from_fn_with_state(
+        .route_layer(axum::middleware::from_fn_with_state(
             state.clone(),
             crate::middleware::auth_middleware,
         ));
@@ -108,7 +108,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/ws/stories/:story_id", get(ws::handler::ws_handler))
         .layer(TraceLayer::new_for_http())
         .layer(cors)
-        .with_state(state);
+        .with_state(state.clone());
 
     // ── 启动 gRPC 服务端 (NarrativeService) ──
     let grpc_addr = format!("{}:{}", config.host, config.grpc_port)

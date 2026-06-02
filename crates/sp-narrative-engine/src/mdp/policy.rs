@@ -35,7 +35,7 @@ impl PolicyIterator {
 
         // 迭代
         for _ in 0..self.max_iterations {
-            let mut delta = 0.0;
+            let mut delta: f64 = 0.0;
 
             // 策略评估: 更新 V(s)
             for (source, entries) in &matrix.matrix {

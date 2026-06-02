@@ -41,6 +41,9 @@ tonic = "0.12"
 tonic-build = "0.12"
 prost = "0.13"
 
+# ── 图数据库 (Memgraph Bolt 协议) ──
+neo4rs = "0.9.0-rc.9"
+
 # ── UUID & 时间 ──
 uuid = { version = "1", features = ["v4", "serde"] }
 chrono = { version = "0.4", features = ["serde"] }

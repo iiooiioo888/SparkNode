@@ -3,21 +3,46 @@
 # ═══════════════════════════════════════════════════
 
 # ── Rust ──
-/target/
+target/
 **/*.rs.bk
 Cargo.lock
+**/*.pdb
+**/*.ilk
+**/*.rlib
+**/*.rmeta
 
 # ── Node.js ──
 node_modules/
 .next/
 out/
 *.tsbuildinfo
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+.turbo/
+.parcel-cache/
+.eslintcache
+.stylelintcache
 
 # ── Python ──
 __pycache__/
 *.py[cod]
 *.egg-info/
 dist/
+.eggs/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.pytype/
+.hypothesis/
+.tox/
+.nox/
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+.dmypy.json
 .venv/
 venv/
 
@@ -36,6 +61,10 @@ venv/
 # ── 系统文件 ──
 .DS_Store
 Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+*.lnk
 
 # ── Docker ──
 docker-compose.override.yml

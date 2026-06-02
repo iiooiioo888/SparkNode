@@ -110,15 +110,27 @@ async fn main() -> anyhow::Result<()> {
         .layer(cors)
         .with_state(state);
 
-    // ── gRPC 服务端预留（proto 契約已生成，完整 tonic server 待接 narrative-engine）──
-    let grpc_addr = format!("{}:{}", config.host, config.grpc_port);
+    // ── 启动 gRPC 服务端 (NarrativeService) ──
+    let grpc_addr = format!("{}:{}", config.host, config.grpc_port)
+        .parse::<SocketAddr>()
+        .expect("无效的 gRPC 地址");
+    let grpc_state = state.clone();
     tokio::spawn(async move {
-        tracing::info!(
-            "gRPC 服務端預留於 {}（NarrativeService / SoulService 待實作）",
-            grpc_addr
-        );
-        std::future::pending::<()>().await;
+        use sp_common::narrative_proto::narrative_service_server::NarrativeServiceServer;
+        use grpc::narrative_server::NarrativeServiceImpl;
+
+        let service = NarrativeServiceImpl { state: grpc_state };
+
+        match tonic::transport::Server::builder()
+            .add_service(NarrativeServiceServer::new(service))
+            .serve(grpc_addr)
+            .await
+        {
+            Ok(_) => tracing::info!("gRPC 服务端已停止"),
+            Err(e) => tracing::error!("gRPC 服务端错误: {}", e),
+        }
     });
+    tracing::info!("✓ gRPC 服务端已启动 @ {}", grpc_addr);
 
     tracing::info!("✓ 限流中间件已挂载 (IP + User + Role 三维滑动窗口)");
 

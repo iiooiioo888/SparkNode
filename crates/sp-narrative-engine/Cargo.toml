@@ -16,3 +16,10 @@ anyhow.workspace = true
 thiserror.workspace = true
 nalgebra.workspace = true
 tracing.workspace = true
+
+# 持久化层
+sqlx.workspace = true
+neo4rs.workspace = true
+
+# 异步运行时（用于后台 Projection Worker）
+tokio.workspace = true

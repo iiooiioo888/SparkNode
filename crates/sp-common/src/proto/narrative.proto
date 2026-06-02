@@ -17,6 +17,56 @@ service NarrativeService {
   
   /// 获取 MDP 转移矩阵当前状态
   rpc GetTransitionMatrix(MatrixRequest) returns (MatrixResponse);
+
+  // ── CQRS 新增 RPC ──
+
+  /// 执行领域命令 (写入端)
+  rpc ExecuteCommand(CommandRequest) returns (CommandResponse);
+  
+  /// 获取时间轴快照列表 (Chronos 读取端)
+  rpc GetTimeline(TimelineRequest) returns (TimelineResponse);
+  
+  /// 回溯到指定快照 (Chronos 写入端)
+  rpc Rollback(RollbackRequest) returns (RollbackResponse);
+}
+
+// ── CQRS 命令请求/响应 ──
+message CommandRequest {
+  string story_id = 1;
+  string actor_id = 2;
+  string command_json = 3; // 序列化的 NarrativeCommand JSON
+}
+
+message CommandResponse {
+  bool success = 1;
+  string error_message = 2;
+  repeated string event_ids = 3; // 产出的 Event ID 列表
+  string events_json = 4; // 序列化的 NarrativeEvent JSON 数组
+}
+
+message TimelineRequest {
+  string story_id = 1;
+}
+
+message TimelineResponse {
+  repeated Checkpoint checkpoints = 1;
+}
+
+message Checkpoint {
+  string id = 1;
+  string node_id = 2;
+  string checkpoint_type = 3;
+  string created_at = 4;
+}
+
+message RollbackRequest {
+  string story_id = 1;
+  string checkpoint_id = 2;
+}
+
+message RollbackResponse {
+  bool success = 1;
+  string message = 2;
 }
 
 // ── 生成请求 ──
